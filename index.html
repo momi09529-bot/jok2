@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background: #f4f4f9; display: flex; height: 100vh; }
-        .sidebar { width: 350px; background: #fff; padding: 20px; box-shadow: 2px 0 5px rgba(0,0,0,0.1); display: flex; flexDirection: column; justify-content: space-between; overflow-y: auto; }
+        .sidebar { width: 350px; background: #fff; padding: 20px; box-shadow: 2px 0 5px rgba(0,0,0,0.1); display: flex; flex-direction: column; justify-content: space-between; overflow-y: auto; }
         .main-map { flex-grow: 1; height: 100%; }
         h2 { color: #333; font-size: 1.2rem; border-bottom: 2px solid #ff4d4d; padding-bottom: 8px; }
         .card { background: #fafafa; border: 1px solid #ddd; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
@@ -25,7 +25,7 @@
 </head>
 <body>
 
-    <!-- ฝั่งควบคุม / แดชบอร์ดคนขับ (จำลอง UI บนมือถือ/คอมในหน้าจอเดียว) -->
+    <!-- ฝั่งควบคุม / แดชบอร์ดคนขับ -->
     <div class="sidebar">
         <div>
             <h2>🚚 ระบบจัดการขนส่งฉุกเฉิน</h2>
@@ -57,19 +57,21 @@
     <!-- โหลด Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // 1. ตั้งค่าแผนที่เริ่มต้น (จำลองจุดศูนย์กลางที่กรุงเทพฯ หรือพื้นที่ทดสอบ)
+        // -----------------------------------------------------------------
+        // 📌 จุดที่ต้องแก้: เอา URL ของเว็บแอป (ที่ได้จากการ Deploy Google Apps Script) มาวางแทนข้อความด้านล่างนี้
+        // -----------------------------------------------------------------
+        const WEB_APP_URL = "เอา_URL_ของเว็บแอปมาวางตรงนี้"; 
+
         const defaultLat = 13.7563;
         const defaultLng = 100.5018;
         
         const map = L.map('map').setView([defaultLat, defaultLng], 13);
 
-        // ดึงแผนที่จาก OpenStreetMap
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
-        // สร้างหมุด (Marker) แทนตำแหน่งรถขนส่ง
         let truckMarker = L.marker([defaultLat, defaultLng]).addTo(map)
             .bindPopup("<b>รถขนส่ง 01: สมชาย</b><br>สถานะ: ปกติ")
             .openPopup();
@@ -78,37 +80,60 @@
         const driverStatus = document.getElementById('driverStatus');
         const gpsText = document.getElementById('gpsText');
 
-        // 2. จำลองการดึง GPS จากมือถือจริง
+        let currentLat = defaultLat;
+        let currentLng = defaultLng;
+
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(position => {
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-                
-                // อัปเดตตำแหน่งหมุดบนแผนที่
-                truckMarker.setLatLng([lat, lng]);
-                gpsText.innerText = `พิกัด GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+                currentLat = position.coords.latitude;
+                currentLng = position.coords.longitude;
+                truckMarker.setLatLng([currentLat, currentLng]);
+                gpsText.innerText = `พิกัด GPS: ${currentLat.toFixed(4)}, ${currentLng.toFixed(4)}`;
             }, error => {
                 console.warn("ไม่สามารถดึง GPS จริงได้ ใช้ค่าเริ่มต้นแทน");
             }, { enableHighAccuracy: true });
         }
 
-        // 3. ฟังก์ชันกดปุ่ม SOS (จำลองเหตุฉุกเฉินน้ำท่วม)
+        // ฟังก์ชันส่งข้อมูลไป Google Sheets & LINE
+        function sendDataToSheet(statusText) {
+            if (WEB_APP_URL.includes("https://script.google.com/macros/s/AKfycbw0PYkgDa-Q4wY-Aki_W5k6gWHKCk8k3dMWw6tJlrd7oRHq2pQ5JsVwZhvKfYqclw/exec")) {
+                console.warn("ยังไม่ได้ใส่ Web App URL");
+                return;
+            }
+
+            const payload = {
+                driverName: "สมชาย ใจดี (รถบรรทุก 01)",
+                status: statusText,
+                lat: currentLat,
+                lng: currentLng
+            };
+
+            fetch(WEB_APP_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(() => {
+                console.log("ส่งข้อมูลสำเร็จ!");
+            }).catch(error => {
+                console.error("Error:", error);
+            });
+        }
+
         function triggerSOS() {
             driverStatus.className = "status-badge status-danger";
             driverStatus.innerText = "🚨 เกิดเหตุฉุกเฉิน / น้ำท่วม!";
             
-            // เปลี่ยนสีไอคอนหรือเพิ่ม Popup เตือน
             truckMarker.bindPopup("<b style='color:red;'>🚨 รถขนส่ง 01 ขอความช่วยเหลือ!</b><br>พื้นที่น้ำท่วมทางขาด").openPopup();
             
-            // บันทึก Log ฝั่งแอดมิน
             const timeStr = new Date().toLocaleTimeString();
-            logBox.innerHTML += `[${timeStr}] <span style="color:#ff4d4d;">SOS! รถ 01 แจ้งเหตุน้ำท่วม</span><br>`;
+            logBox.innerHTML += `[${timeStr}] <span style="color:#ff4d4d;">SOS! ส่งข้อมูลไป Cloud แล้ว</span><br>`;
             logBox.scrollTop = logBox.scrollHeight;
-            
-            alert("ส่งสัญญาณขอความช่วยเหลือไปยังศูนย์ควบคุมเรียบร้อยแล้ว!");
+
+            sendDataToSheet("เกิดเหตุฉุกเฉิน / น้ำท่วม");
+            alert("ส่งสัญญาณขอความช่วยเหลือและบันทึกลงระบบเรียบร้อย!");
         }
 
-        // 4. ฟังก์ชันเคลียร์สถานะกลับเป็นปกติ
         function resolveSOS() {
             driverStatus.className = "status-badge status-ok";
             driverStatus.innerText = "เดินทางปกติ";
@@ -116,8 +141,10 @@
             truckMarker.bindPopup("<b>รถขนส่ง 01: สมชาย</b><br>สถานะ: ปกติ").openPopup();
             
             const timeStr = new Date().toLocaleTimeString();
-            logBox.innerHTML += `[${timeStr}] <span style="color:#0f0;">รถ 01 แจ้งสถานการณ์คลี่คลาย</span><br>`;
+            logBox.innerHTML += `[${timeStr}] <span style="color:#0f0;">สถานการณ์ปกติ อัปเดตลง Cloud แล้ว</span><br>`;
             logBox.scrollTop = logBox.scrollHeight;
+
+            sendDataToSheet("เดินทางปกติ");
         }
     </script>
 </body>
